@@ -1,0 +1,966 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CodeLens - 实时 Web 代码沙盒</title>
+    <!-- Google Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- CodeMirror Base -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.9/codemirror.min.css">
+    <!-- CodeMirror Themes -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.9/theme/dracula.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.9/theme/material.min.css">
+
+    <style>
+        :root {
+            --bg: #f9fafb;
+            --fg: #1f2937;
+            --panel-bg: #ffffff;
+            --border-color: #e5e7eb;
+            --header-bg: #f3f4f6;
+            --header-fg: #374151;
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --secondary: #6b7280;
+            --secondary-hover: #4b5563;
+            --accent: #06b6d4;
+            --console-bg: #111827;
+            --console-fg: #d1d5db;
+            --shadow: rgba(0, 0, 0, 0.05);
+            --gutter-bg: #e5e7eb;
+            --gutter-bg-drag: #d1d5db;
+            --font-sans: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-mono: 'Fira Code', 'Courier New', monospace;
+            --transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+
+        .dark {
+            --bg: #1f2937;
+            --fg: #f3f4f6;
+            --panel-bg: #374151;
+            --border-color: #4b5563;
+            --header-bg: #4b5563;
+            --header-fg: #e5e7eb;
+            --primary: #60a5fa;
+            --primary-hover: #3b82f6;
+            --secondary: #9ca3af;
+            --secondary-hover: #d1d5db;
+            --accent: #22d3ee;
+            --console-bg: #111827;
+            --console-fg: #d1d5db;
+            --shadow: rgba(0, 0, 0, 0.15);
+            --gutter-bg: #4b5563;
+            --gutter-bg-drag: #6b7280;
+        }
+
+        * { 
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: var(--font-sans);
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+            background: var(--bg);
+            color: var(--fg);
+            line-height: 1.6;
+            transition: var(--transition);
+        }
+
+        .main-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 24px;
+            background: linear-gradient(to bottom, var(--panel-bg), var(--panel-bg) 90%, transparent);
+            box-shadow: 0 2px 10px var(--shadow);
+            flex-shrink: 0;
+            position: relative;
+            z-index: 10;
+        }
+
+        .main-header h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin: 0;
+            letter-spacing: 0.025em;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .main-header h1 i {
+            color: var(--primary);
+        }
+
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .controls button, .controls label {
+            font-size: 14px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            border-radius: 8px;
+            border: 1px solid transparent;
+            cursor: pointer;
+            transition: var(--transition);
+            box-shadow: 0 2px 4px var(--shadow);
+            font-weight: 600;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .controls button::after, .controls label::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(rgba(255,255,255,0.1), rgba(255,255,255,0));
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            z-index: -1;
+        }
+
+        .controls button:hover::after, .controls label:hover::after {
+            opacity: 1;
+        }
+
+        .controls button {
+            background-color: var(--secondary);
+            border-color: var(--secondary);
+            color: #fff;
+        }
+
+        .controls button:hover {
+            background-color: var(--secondary-hover);
+            border-color: var(--secondary-hover);
+            transform: translateY(-1px);
+            box-shadow: 0 3px 6px var(--shadow);
+        }
+
+        .controls button:active {
+            transform: translateY(0);
+            box-shadow: 0 1px 2px var(--shadow);
+        }
+
+        .controls button.primary-action {
+            background-color: var(--primary);
+            border-color: var(--primary);
+            box-shadow: 0 4px 15px rgba(37, 99, 235, 0.3);
+        }
+
+        .controls button.primary-action:hover {
+            background-color: var(--primary-hover);
+            border-color: var(--primary-hover);
+            box-shadow: 0 6px 20px rgba(37, 99, 235, 0.4);
+        }
+
+        .controls label {
+            background-color: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            padding: 7px 12px;
+        }
+
+        .controls input[type="checkbox"] {
+            margin-right: 5px;
+            height: 1em;
+            width: 1em;
+            accent-color: var(--primary);
+        }
+
+        .content-wrapper {
+            display: flex;
+            flex-direction: column;
+            flex-grow: 1;
+            height: calc(100vh - 60px);
+            padding: 15px;
+            gap: 15px;
+            background: var(--bg);
+        }
+
+        .split-container-vertical {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        .split-container-horizontal {
+            display: flex;
+            flex-direction: row;
+            height: 100%;
+            width: 100%;
+        }
+
+        .editors, .preview-console {
+            display: flex;
+            overflow: hidden;
+        }
+
+        .editors > .gutter, .preview-console > .gutter {
+            background-color: var(--gutter-bg);
+            transition: var(--transition);
+        }
+
+        .editors > .gutter:hover, .preview-console > .gutter:hover {
+            background-color: var(--gutter-bg-drag);
+        }
+
+        .gutter.gutter-horizontal { 
+            cursor: col-resize; 
+            width: 8px; 
+        }
+
+        .gutter.gutter-vertical { 
+            cursor: row-resize; 
+            height: 8px; 
+        }
+
+        .gutter::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 40px;
+            height: 2px;
+            background: rgba(255, 255, 255, 0.3);
+            transform: translate(-50%, -50%);
+            border-radius: 2px;
+        }
+
+        .editor-container, .preview-container, .console-container {
+            display: flex;
+            flex-direction: column;
+            background: var(--panel-bg);
+            border-radius: 8px;
+            box-shadow: 0 4px 15px var(--shadow);
+            border: 1px solid var(--border-color);
+            height: 100%;
+            width: 100%;
+            transition: var(--transition);
+        }
+
+        .editor-container:hover, .preview-container:hover, .console-container:hover {
+            box-shadow: 0 6px 20px var(--shadow);
+            transform: translateY(-1px);
+        }
+
+        .editor-container, .console-container {
+            overflow: hidden;
+        }
+
+        .preview-container {
+            overflow: auto;
+        }
+
+        .panel-header {
+            margin: 0;
+            padding: 12px 16px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            background: linear-gradient(to right, var(--header-bg), var(--header-bg) 70%, transparent);
+            color: var(--header-fg);
+            border-bottom: none;
+            flex-shrink: 0;
+            border-top-left-radius: 8px;
+            border-top-right-radius: 8px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .panel-header::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: linear-gradient(90deg, var(--primary), transparent);
+        }
+
+        .editor-container .panel-header { 
+            background: var(--primary); 
+            color: #fff; 
+        }
+        .editor-container .panel-header::after { 
+            background: linear-gradient(90deg, rgba(255,255,255,0.5), transparent); 
+        }
+        
+        .preview-container .panel-header { 
+            background: var(--accent); 
+            color: #fff; 
+        }
+        .preview-container .panel-header::after { 
+            background: linear-gradient(90deg, rgba(255,255,255,0.5), transparent); 
+        }
+        
+        .console-container .panel-header { 
+            background: var(--secondary); 
+            color: #fff; 
+        }
+        .console-container .panel-header::after { 
+            background: linear-gradient(90deg, rgba(255,255,255,0.5), transparent); 
+        }
+
+        .CodeMirror {
+            flex-grow: 1;
+            height: auto !important;
+            border: none;
+            border-radius: 0 0 8px 8px;
+            transition: var(--transition);
+            font-family: var(--font-mono);
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        #preview-frame {
+            flex-grow: 1;
+            border: none;
+            background-color: #fff;
+            width: 100%;
+            height: 100%;
+            display: block;
+            border-radius: 0 0 8px 8px;
+            transition: var(--transition);
+        }
+
+        #console-output {
+            flex-grow: 1;
+            margin: 0;
+            padding: 15px;
+            background: var(--console-bg);
+            color: var(--console-fg);
+            font-family: var(--font-mono);
+            font-size: 13px;
+            overflow: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+            border-radius: 0 0 8px 8px;
+            line-height: 1.6;
+        }
+
+        #console-output .log-message { color: #e2e8f0; }
+        #console-output .error-message { color: #f87171; }
+        #console-output .info-message { color: #60a5fa; }
+        #console-output .warn-message { color: #fbbf24; }
+
+        #console-output .log-message::before { content: "➤ "; opacity: 0.7; }
+        #console-output .error-message::before { content: "✖ "; }
+        #console-output .info-message::before { content: "ℹ "; }
+        #console-output .warn-message::before { content: "⚠ "; }
+
+        /* 自定义滚动条 */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.1);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(0, 0, 0, 0.3);
+        }
+
+        /* 加载动画 */
+        @keyframes pulse {
+            0% { opacity: 0.6; }
+            50% { opacity: 1; }
+            100% { opacity: 0.6; }
+        }
+
+        .running-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--accent);
+            margin-right: 8px;
+            animation: pulse 1.5s infinite;
+        }
+
+        /* 状态提示 */
+        .status-message {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            background: var(--primary);
+            color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            transform: translateY(20px);
+            opacity: 0;
+            transition: all 0.3s ease;
+            z-index: 1000;
+        }
+
+        .status-message.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        @media (max-width: 768px) {
+            .main-header { 
+                flex-direction: column; 
+                height: auto; 
+                padding: 16px;
+                gap: 12px;
+            }
+            
+            .main-header h1 { 
+                margin-bottom: 10px; 
+                text-align: center;
+            }
+            
+            .controls {
+                justify-content: center;
+                width: 100%;
+            }
+            
+            .controls button, .controls label {
+                flex-grow: 1;
+                justify-content: center;
+            }
+            
+            .content-wrapper { 
+                height: calc(100vh - 100px); 
+                padding: 10px;
+            }
+
+            .editors { 
+                flex-direction: column; 
+            }
+            
+            .editors .editor-container { 
+                height: 200px; 
+            }
+
+            .preview-console { 
+                flex-direction: column; 
+            }
+            
+            .preview-console > div { 
+                height: 50%; 
+            }
+
+            .editors > .gutter.gutter-horizontal,
+            .preview-console > .gutter.gutter-horizontal { 
+                display: none; 
+            }
+
+            .editors > .gutter.gutter-vertical,
+            .preview-console > .gutter.gutter-vertical { 
+                width: 100%; 
+                height: 8px; 
+                display: block; 
+            }
+
+            .editor-container, .preview-container, .console-container {
+                border-radius: 6px;
+                margin-bottom: 12px;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            }
+
+            .panel-header {
+                font-size: 0.85rem;
+                padding: 10px 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="main-header">
+        <h1><i class="fas fa-code"></i> 实时代码编辑器</h1>
+        <div class="controls">
+            <label title="实时更新预览">
+                <input type="checkbox" id="auto-run" checked> 自动运行
+            </label>
+            <button id="run-btn" class="primary-action" aria-label="运行代码" title="运行代码 (Ctrl+Enter)">
+                <i class="fas fa-play"></i> 运行
+            </button>
+            <button id="clear-btn" aria-label="清空所有编辑器" title="清空所有编辑器">
+                <i class="fas fa-eraser"></i> 清空
+            </button>
+            <button id="download-btn" aria-label="下载为 HTML 文件" title="下载为 HTML 文件">
+                <i class="fas fa-download"></i> 下载
+            </button>
+            <button id="theme-btn" aria-label="切换界面和编辑器主题" title="切换主题">
+                <i class="fas fa-palette"></i> 主题
+            </button>
+        </div>
+    </header>
+
+    <div class="content-wrapper split-container-vertical">
+        <div id="editors-split" class="editors split-container-horizontal">
+            <div id="html-panel" class="editor-container">
+                <h2 class="panel-header">HTML</h2>
+                <textarea id="html-editor"></textarea>
+            </div>
+            <div id="css-panel" class="editor-container">
+                <h2 class="panel-header">CSS</h2>
+                <textarea id="css-editor"></textarea>
+            </div>
+            <div id="js-panel" class="editor-container">
+                <h2 class="panel-header">JS</h2>
+                <textarea id="js-editor"></textarea>
+            </div>
+        </div>
+
+        <div id="output-split" class="preview-console split-container-horizontal">
+            <div id="preview-panel" class="preview-container">
+                <h2 class="panel-header">预览</h2>
+                <iframe id="preview-frame" sandbox="allow-scripts allow-same-origin"></iframe>
+            </div>
+            <div id="console-panel" class="console-container">
+                <h2 class="panel-header">控制台</h2>
+                <pre id="console-output"></pre>
+            </div>
+        </div>
+    </div>
+
+    <!-- CodeMirror Core & Modes -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.9/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.9/mode/htmlmixed/htmlmixed.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.9/mode/css/css.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.9/mode/javascript/javascript.min.js"></script>
+    <!-- CodeMirror Addons -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.9/addon/edit/matchbrackets.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.9/addon/edit/closebrackets.min.js"></script>
+    <!-- Split.js for Resizable Panels -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/split.js/1.6.0/split.min.js"></script>
+
+    <script>
+        const editors = {};
+        const editorElements = {
+            html: document.getElementById('html-editor'),
+            css: document.getElementById('css-editor'),
+            js: document.getElementById('js-editor')
+        };
+        const iframe = document.getElementById('preview-frame');
+        const consoleOutput = document.getElementById('console-output');
+        const autoRunCheckbox = document.getElementById('auto-run');
+        const storageKeys = {
+            html: 'liveEditorHtmlCode',
+            css: 'liveEditorCssCode',
+            js: 'liveEditorJsCode',
+            theme: 'liveEditorTheme'
+        };
+        const availableThemes = ['default', 'dracula', 'material'];
+        let currentThemeIndex = 0;
+        let runTimeout;
+        let debounceSaveTimeout;
+
+        function initializeEditors() {
+            ['html', 'css', 'js'].forEach(type => {
+                editors[type] = CodeMirror.fromTextArea(editorElements[type], {
+                    mode: type === 'html' ? 'htmlmixed' : type,
+                    lineNumbers: true,
+                    theme: getCurrentTheme(),
+                    autoCloseBrackets: true,
+                    matchBrackets: true,
+                    value: localStorage.getItem(storageKeys[type]) || getDefaultCode(type),
+                    lineWrapping: true,
+                    indentUnit: 4,
+                    extraKeys: {
+                        "Ctrl-Enter": runCode,
+                        "Cmd-Enter": runCode
+                    }
+                });
+
+                editors[type].on('change', () => {
+                    saveCodeDebounced(type, editors[type].getValue());
+                    if (autoRunCheckbox.checked) {
+                        triggerAutoRun();
+                    }
+                });
+
+                editors[type].on('refresh', () => {});
+            });
+        }
+
+        function initializeSplitting() {
+            const editorSplit = Split(['#html-panel', '#css-panel', '#js-panel'], {
+                sizes: [34, 33, 33],
+                minSize: 100,
+                gutterSize: 8,
+                cursor: 'col-resize',
+                elementStyle: (dimension, size, gutterSize) => ({
+                    'flex-basis': `calc(${size}% - ${gutterSize}px)`,
+                }),
+                gutterStyle: (dimension, gutterSize) => ({
+                    'flex-basis': `${gutterSize}px`,
+                }),
+                onDragEnd: refreshEditors
+            });
+
+            const outputSplit = Split(['#preview-panel', '#console-panel'], {
+                sizes: [65, 35],
+                minSize: 100,
+                gutterSize: 8,
+                cursor: 'col-resize',
+                elementStyle: (dimension, size, gutterSize) => ({
+                    'flex-basis': `calc(${size}% - ${gutterSize}px)`,
+                }),
+                gutterStyle: (dimension, gutterSize) => ({
+                    'flex-basis': `${gutterSize}px`,
+                })
+            });
+
+            const mainSplit = Split(['#editors-split', '#output-split'], {
+                sizes: [60, 40],
+                minSize: 150,
+                gutterSize: 8,
+                direction: 'vertical',
+                cursor: 'row-resize',
+                onDragEnd: refreshEditors
+            });
+        }
+
+        function applyInitialTheme() {
+            const savedTheme = localStorage.getItem(storageKeys.theme);
+            const themeIndex = availableThemes.indexOf(savedTheme);
+            currentThemeIndex = themeIndex !== -1 ? themeIndex : 0;
+            setTheme(availableThemes[currentThemeIndex]);
+        }
+
+        function assembleCode() {
+            const html = editors.html.getValue();
+            const css = editors.css.getValue();
+            const js = editors.js.getValue();
+
+            const captureScript = `
+<script>
+    const _origConsoleLog = console.log;
+    const _origConsoleError = console.error;
+    const _origConsoleWarn = console.warn;
+    const _origConsoleInfo = console.info;
+
+    function formatArg(arg) {
+        try {
+            if (arg instanceof Error) {
+                return JSON.stringify({ message: arg.message, stack: arg.stack });
+            }
+            if (typeof arg === 'object' && arg !== null) {
+                try { return JSON.stringify(arg); } catch { return '[Object]'; }
+            }
+            if (typeof arg === 'function') return '[Function]';
+            if (typeof arg === 'undefined') return 'undefined';
+            return String(arg);
+        } catch (e) {
+            return '[Unstringifiable]';
+        }
+    }
+
+    console.log = function(...args) {
+        parent.postMessage({ type: 'log', args: args.map(formatArg) }, '*');
+        _origConsoleLog.apply(console, args);
+    };
+    console.error = function(...args) {
+        parent.postMessage({ type: 'error', args: args.map(formatArg) }, '*');
+        _origConsoleError.apply(console, args);
+    };
+    console.warn = function(...args) {
+        parent.postMessage({ type: 'warn', args: args.map(formatArg) }, '*');
+        _origConsoleWarn.apply(console, args);
+    };
+    console.info = function(...args) {
+        parent.postMessage({ type: 'info', args: args.map(formatArg) }, '*');
+        _origConsoleInfo.apply(console, args);
+    };
+
+    window.onerror = function(message, source, lineno, colno, error) {
+        let errorMsg = message;
+        let stack = error?.stack;
+        if (error) {
+            errorMsg = error.message || message;
+        }
+        parent.postMessage({
+            type: 'error',
+            args: [JSON.stringify({ message: errorMsg, source: source?.split('/').pop(), lineno, colno, stack: stack })]
+        }, '*');
+        return true;
+    };
+<\/script>
+            `;
+
+            return `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>${css}</style>
+</head>
+<body>
+    ${html}
+    ${captureScript}
+    <script>${js}<\/script>
+</body>
+</html>`;
+        }
+
+        function runCode() {
+            const runBtn = document.getElementById('run-btn');
+            runBtn.innerHTML = '<span class="running-indicator"></span><i class="fas fa-play"></i> 运行中...';
+            
+            clearConsole();
+            logToConsole('Running code...', 'info-message');
+            const srcdoc = assembleCode();
+            
+            setTimeout(() => {
+                iframe.srcdoc = srcdoc;
+                showStatusMessage('代码已运行', 'success');
+            }, 10);
+            
+            iframe.onload = function() {
+                runBtn.innerHTML = '<i class="fas fa-play"></i> 运行';
+            };
+        }
+
+        function triggerAutoRun() {
+            clearTimeout(runTimeout);
+            runTimeout = setTimeout(runCode, 500);
+        }
+
+        function saveCodeDebounced(type, value) {
+            clearTimeout(debounceSaveTimeout);
+            debounceSaveTimeout = setTimeout(() => {
+                try {
+                    localStorage.setItem(storageKeys[type], value);
+                    showStatusMessage('代码已保存', 'info');
+                } catch (e) {
+                    console.error("Error saving to localStorage:", e);
+                    logToConsole('Error saving code to local storage.', 'error-message');
+                    showStatusMessage('保存失败', 'error');
+                }
+            }, 1000);
+        }
+
+        function saveThemePreference(themeName) {
+            try {
+                localStorage.setItem(storageKeys.theme, themeName);
+            } catch (e) {
+                console.error("Error saving theme preference:", e);
+                logToConsole('Error saving theme preference.', 'error-message');
+            }
+        }
+
+        function setTheme(themeName) {
+            if (themeName === 'default') {
+                document.body.classList.remove('dark');
+            } else {
+                document.body.classList.add('dark');
+            }
+
+            Object.values(editors).forEach(ed => {
+                if (ed) ed.setOption('theme', themeName);
+            });
+
+            const themeIcon = document.querySelector('#theme-btn i');
+            if (themeIcon) {
+                themeIcon.className = `fas ${themeName === 'default' ? 'fa-sun' : 'fa-moon'}`;
+            }
+            document.getElementById('theme-btn').title = `切换主题 (当前: ${themeName})`;
+            showStatusMessage(`主题已切换为 ${themeName}`, 'info');
+        }
+
+        function cycleTheme() {
+            currentThemeIndex = (currentThemeIndex + 1) % availableThemes.length;
+            const newTheme = availableThemes[currentThemeIndex];
+            setTheme(newTheme);
+            saveThemePreference(newTheme);
+        }
+
+        function clearEditors() {
+            ['html', 'css', 'js'].forEach(type => {
+                if (editors[type]) {
+                    editors[type].setValue('');
+                }
+            });
+            clearConsole();
+            runCode();
+            showStatusMessage('编辑器已清空', 'info');
+        }
+
+        function clearConsole() {
+            consoleOutput.innerHTML = '';
+        }
+
+        function logToConsole(message, typeClass = 'log-message') {
+            const entry = document.createElement('div');
+            entry.className = typeClass;
+            entry.textContent = message;
+            consoleOutput.appendChild(entry);
+            consoleOutput.scrollTop = consoleOutput.scrollHeight;
+        }
+
+        function refreshEditors() {
+            Object.values(editors).forEach(editor => {
+                if (editor) editor.refresh();
+            });
+        }
+
+        function downloadCode() {
+            const code = assembleCode();
+            const cleanCode = code.replace(/<script>[\s\S]*?parent\.postMessage[\s\S]*?<\/script>\s*/, '');
+            const blob = new Blob([cleanCode], { type: 'text/html' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'index.html';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(a.href);
+            showStatusMessage('文件已下载', 'success');
+        }
+
+        function showStatusMessage(message, type = 'info') {
+            const status = document.createElement('div');
+            status.className = `status-message show ${type}-message`;
+            status.textContent = message;
+            document.body.appendChild(status);
+            
+            setTimeout(() => {
+                status.classList.remove('show');
+                setTimeout(() => status.remove(), 300);
+            }, 3000);
+        }
+
+        window.addEventListener('message', event => {
+            const data = event.data;
+            if (!data || !data.type || !Array.isArray(data.args)) {
+                return;
+            }
+
+            let message = '';
+            let typeClass = 'log-message';
+
+            try {
+                const formattedArgs = data.args.map(argStr => {
+                    try {
+                        if (data.type === 'error' && argStr.includes('"message":') && argStr.includes('"lineno":')) {
+                            const errObj = JSON.parse(argStr);
+                            let errMsg = `❌ Error: ${errObj.message}`;
+                            if (errObj.source) errMsg += ` (in ${errObj.source})`;
+                            if (errObj.lineno) errMsg += ` line: ${errObj.lineno}`;
+                            return errMsg;
+                        }
+                        try {
+                            const parsed = JSON.parse(argStr);
+                            return typeof parsed === 'object' ? JSON.stringify(parsed, null, 2) : parsed;
+                        } catch {
+                            return argStr;
+                        }
+                    } catch (e) {
+                        return '[Parse Error]';
+                    }
+                });
+
+                if (data.type === 'error') {
+                    typeClass = 'error-message';
+                    message = formattedArgs.join(' ');
+                } else if (data.type === 'warn') {
+                    typeClass = 'warn-message';
+                    message = `⚠️ Warn: ${formattedArgs.join(' ')}`;
+                } else if (data.type === 'info') {
+                    typeClass = 'info-message';
+                    message = `ℹ️ Info: ${formattedArgs.join(' ')}`;
+                } else {
+                    typeClass = 'log-message';
+                    message = `➡️ Log: ${formattedArgs.join(' ')}`;
+                }
+            } catch (e) {
+                console.error("Error processing message from iframe:", e);
+                message = `Error displaying message: ${data.args.join(' ')}`;
+                typeClass = 'error-message';
+            }
+
+            logToConsole(message, typeClass);
+        });
+
+        window.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                e.preventDefault();
+                runCode();
+            }
+        });
+
+        document.getElementById('run-btn').onclick = runCode;
+        document.getElementById('clear-btn').onclick = clearEditors;
+        document.getElementById('download-btn').onclick = downloadCode;
+        document.getElementById('theme-btn').onclick = cycleTheme;
+        autoRunCheckbox.onchange = () => {
+            if (autoRunCheckbox.checked) {
+                runCode();
+            }
+        };
+
+        function getDefaultCode(type) {
+            switch(type) {
+                case 'html': return `<h1>Hello World</h1>
+<p>Edit the code and see changes live!</p>
+<p style="margin-bottom: 600px;">Add more content here to test scrolling in the preview pane.</p>
+<button onclick="console.log('Button clicked!'); alert('Hi!');">Click Me</button>
+<p>End of content.</p>`;
+                case 'css': return `body {
+  font-family: sans-serif;
+  padding: 20px;
+  background-color: #f0f0f0;
+}
+h1 {
+  color: #007bff;
+}
+button {
+    padding: 10px 15px;
+    font-size: 1rem;
+    cursor: pointer;
+    background-color: #28a745;
+    color: white;
+    border: none;
+    border-radius: 4px;
+}`;
+                case 'js': return `console.log('Hello from JavaScript!');
+console.warn("This is a warning message.");
+console.info({ user: 'Alice', id: 123 });
+
+function greet(name) {
+    console.log(\`Greetings, \${name}!\`);
+}
+
+greet('Developer');`;
+                default: return '';
+            }
+        }
+
+        function getCurrentTheme() {
+            return availableThemes[currentThemeIndex];
+        }
+
+        applyInitialTheme();
+        initializeEditors();
+        initializeSplitting();
+        runCode();
+    </script>
+</body>
+</html>
